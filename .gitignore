@@ -1,0 +1,6 @@
+# data is downloaded at run time, not stored in the repo
+03-powerbi-people-dashboard/model/
+*.csv
+__pycache__/
+.ipynb_checkpoints/
+.venv/
