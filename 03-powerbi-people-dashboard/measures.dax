@@ -1,0 +1,100 @@
+// ============================================================================
+// People dashboard: DAX measures
+// Create a table called _Measures (Enter data, one empty column) and add these
+// measures to it. Table and column names match the CSVs from prepare_data.py.
+// ============================================================================
+
+// ---------- Headcount ----------------------------------------------------------
+Headcount =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE ( DISTINCTCOUNT ( HeadcountSnapshot[EmpKey] ), 'Date'[MonthEnd] = m )
+
+Avg Headcount 12M =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    AVERAGEX (
+        FILTER ( ALL ( 'Date' ), 'Date'[MonthEnd] > EDATE ( m, -12 ) && 'Date'[MonthEnd] <= m ),
+        [Headcount]
+    )
+
+Hires =
+COUNTROWS ( Hires )
+
+// ---------- Attrition ----------------------------------------------------------
+Leavers =
+COUNTROWS ( Terminations )
+
+Voluntary Leavers =
+CALCULATE ( [Leavers], Terminations[TermType] = "Voluntary" )
+
+Leavers 12M =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE (
+        [Leavers],
+        FILTER ( ALL ( 'Date' ), 'Date'[MonthEnd] > EDATE ( m, -12 ) && 'Date'[MonthEnd] <= m )
+    )
+
+Voluntary Leavers 12M =
+CALCULATE ( [Leavers 12M], Terminations[TermType] = "Voluntary" )
+
+Attrition Rate 12M =
+DIVIDE ( [Leavers 12M], [Avg Headcount 12M] )
+
+Voluntary Attrition Rate 12M =
+DIVIDE ( [Voluntary Leavers 12M], [Avg Headcount 12M] )
+
+// ---------- Cost and workforce profile ------------------------------------------
+// Salary is the latest salary in the source data (no salary history), so cost
+// over time uses today's pay for everyone employed in that month.
+Annual Personnel Cost =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE ( SUMX ( HeadcountSnapshot, RELATED ( Employee[Salary] ) ), 'Date'[MonthEnd] = m )
+
+Avg Salary =
+DIVIDE ( [Annual Personnel Cost], [Headcount] )
+
+Avg Tenure (years) =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE (
+        AVERAGEX ( HeadcountSnapshot, ( m - RELATED ( Employee[HireDate] ) ) / 365.25 ),
+        'Date'[MonthEnd] = m
+    )
+
+Avg Engagement =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE ( AVERAGEX ( HeadcountSnapshot, RELATED ( Employee[EngagementSurvey] ) ), 'Date'[MonthEnd] = m )
+
+Avg Absences =
+VAR m = MAX ( 'Date'[MonthEnd] )
+RETURN
+    CALCULATE ( AVERAGEX ( HeadcountSnapshot, RELATED ( Employee[Absences] ) ), 'Date'[MonthEnd] = m )
+
+// ---------- Scenario (workforce plan for the next 12 months) ---------------------
+// Create three what-if parameters (Modeling > New parameter > Numeric range):
+//   Growth          min -0.10  max 0.20  step 0.01   default 0.05
+//   Attrition Change min -0.50 max 0.50  step 0.05   default 0
+//   Pay Increase    min 0      max 0.10  step 0.005  default 0.03
+// Power BI then creates the tables and the "... Value" measures used below.
+
+Plan Headcount =
+ROUND ( [Headcount] * ( 1 + [Growth Value] ), 0 )
+
+Plan Leavers =
+ROUND ( [Headcount] * [Attrition Rate 12M] * ( 1 + [Attrition Change Value] ), 0 )
+
+Hires Needed =
+[Plan Headcount] - [Headcount] + [Plan Leavers]
+
+Plan Personnel Cost =
+[Plan Headcount] * [Avg Salary] * ( 1 + [Pay Increase Value] )
+
+Cost Change =
+[Plan Personnel Cost] - [Annual Personnel Cost]
+
+Cost Change % =
+DIVIDE ( [Cost Change], [Annual Personnel Cost] )
